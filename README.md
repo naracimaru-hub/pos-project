@@ -9,7 +9,19 @@ Aplikasi kasir sederhana berbasis React + Vite, siap di-deploy ke Vercel.
 - Produk, kategori, SKU, harga, dan stok
 - Riwayat transaksi, cetak struk, ekspor CSV
 - Ringkasan penjualan
-- Data tersimpan di localStorage browser
+- Data tersimpan di localStorage browser, terpisah berdasarkan toko aktif
+- Alur login / registrasi, pembuatan toko, dan pemilihan toko
+
+## Konfigurasi publik Supabase
+1. Salin `.env.example` menjadi `.env.local`.
+2. Isi variabel:
+   ```bash
+   VITE_SUPABASE_URL=https://<project>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<anon-key>
+   ```
+3. Konfigurasi ini mengaktifkan Supabase Auth. Akses data toko online masih dinonaktifkan sampai skema aktual dan kebijakan RLS project diverifikasi.
+4. Cocokkan implementasi data dengan skema yang benar-benar tersedia dan pastikan RLS membatasi akses berdasarkan membership toko sebelum mengaktifkan sinkronisasi.
+5. Jangan menaruh service-role key atau secret di frontend.
 
 ## Jalankan di komputer
 1. Install Node.js versi LTS: https://nodejs.org
