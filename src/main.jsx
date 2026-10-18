@@ -30,6 +30,8 @@ import {
   createSupabaseStore,
   fetchProductsByStore,
   upsertSupabaseProduct,
+  deleteSupabaseProduct,
+  fetchSalesByStore,
   insertSupabaseSale
 } from "./lib/supabase-data";
 import "./style.css";
@@ -81,12 +83,15 @@ const toStoreName = (name) => (name || "Toko Demo").trim();
 const getDefaultStoreOptions = (selectedStoreName = "Toko Demo") => [
   { id: DEFAULT_STORE_ID, name: selectedStoreName }
 ];
+const isDatabaseId = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id || "");
 
 function App() {
-  const [selectedStoreId, setSelectedStoreId] = useState(() => read("kg_selected_store", DEFAULT_STORE_ID));
-  const [selectedStoreName, setSelectedStoreName] = useState(() => read("kg_selected_store_name", "Toko Demo"));
-  const [products, setProducts] = useState(() => read(storeKey(read("kg_selected_store", DEFAULT_STORE_ID), "products"), initialProducts));
-  const [sales, setSales] = useState(() => read(storeKey(read("kg_selected_store", DEFAULT_STORE_ID), "sales"), []));
+  const [preferredStoreId, setPreferredStoreId] = useState(() => read("kg_selected_store", DEFAULT_STORE_ID));
+  const [selectedStoreId, setSelectedStoreId] = useState(DEFAULT_STORE_ID);
+  const [selectedStoreName, setSelectedStoreName] = useState("Toko Demo");
+  const [dataStoreId, setDataStoreId] = useState(DEFAULT_STORE_ID);
+  const [products, setProducts] = useState(() => read(storeKey(DEFAULT_STORE_ID, "products"), initialProducts));
+  const [sales, setSales] = useState(() => read(storeKey(DEFAULT_STORE_ID, "sales"), []));
   const [cart, setCart] = useState([]);
   const [page, setPage] = useState("Kasir");
   const [search, setSearch] = useState("");
@@ -102,11 +107,26 @@ function App() {
   const [storePicker, setStorePicker] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [authLoading, setAuthLoading] = useState(false);
+  const [authInitialized, setAuthInitialized] = useState(!supabase);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [storeDataLoading, setStoreDataLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ email: "", password: "", name: "" });
   const [newStoreName, setNewStoreName] = useState("");
   const [session, setSession] = useState(null);
+  const [membershipUserId, setMembershipUserId] = useState(null);
   const [stores, setStores] = useState(() => getDefaultStoreOptions());
   const [schemaInfo, setSchemaInfo] = useState({ ready: false, tables: {}, message: "Memeriksa skema Supabase..." });
+  const [syncMessage, setSyncMessage] = useState("Mode lokal");
+  const isOnlineStore = Boolean(
+    supabase &&
+    session &&
+    membershipUserId === session.user.id &&
+    isDatabaseId(selectedStoreId) &&
+    stores.some((store) => store.id === selectedStoreId)
+  );
+  const canManageProducts = !supabase || (!session
+    ? true
+    : isOnlineStore && stores.find((store) => store.id === selectedStoreId)?.role === "owner");
 
   const categories = useMemo(() => ["Semua", ...new Set(products.map((p) => p.category))], [products]);
   const visibleProducts = products.filter(
@@ -133,36 +153,82 @@ function App() {
   const total = subtotal - discountAmount + tax;
 
   useEffect(() => {
-    write("kg_selected_store", selectedStoreId);
-    write("kg_selected_store_name", selectedStoreName);
-  }, [selectedStoreId, selectedStoreName]);
+    if (authInitialized && selectedStoreId) {
+      write("kg_selected_store", selectedStoreId);
+      write("kg_selected_store_name", selectedStoreName);
+    }
+  }, [authInitialized, selectedStoreId, selectedStoreName]);
 
   useEffect(() => {
-    const restoreLocalData = async () => {
+    let active = true;
+    const restoreStoreData = async () => {
+      setCart([]);
+      if (isOnlineStore) {
+        setStoreDataLoading(true);
+        setProducts([]);
+        setSales([]);
+        setSyncMessage("Memuat data online...");
+        try {
+          const [remoteProducts, remoteSales] = await Promise.all([
+            fetchProductsByStore(selectedStoreId),
+            fetchSalesByStore(selectedStoreId)
+          ]);
+          if (!active) return;
+          setProducts(remoteProducts);
+          setSales(remoteSales);
+          setDataStoreId(selectedStoreId);
+          setSyncMessage("Tersinkron ke Supabase");
+          setStoreDataLoading(false);
+        } catch (error) {
+          if (!active) return;
+          setProducts([]);
+          setSales([]);
+          setDataStoreId(selectedStoreId);
+          setSyncMessage("Gagal memuat data online");
+          setNotice(`Gagal memuat data toko dari Supabase: ${error?.message || "Kesalahan tidak diketahui."}`);
+          setStoreDataLoading(false);
+        }
+        return;
+      }
+
+      setStoreDataLoading(false);
+      if (supabase && session) {
+        setProducts([]);
+        setSales([]);
+        setDataStoreId(selectedStoreId);
+        setSyncMessage(membershipUserId === session.user.id
+          ? "Belum ada toko online"
+          : "Memuat toko online...");
+        return;
+      }
+
       const scopedProducts = read(storeKey(selectedStoreId, "products"), initialProducts);
       const scopedSales = read(storeKey(selectedStoreId, "sales"), []);
       setProducts(scopedProducts);
       setSales(scopedSales);
-      setCart([]);
-
-      if (supabase && selectedStoreId && schemaInfo.ready) {
-        const remoteProducts = await fetchProductsByStore(selectedStoreId);
-        if (remoteProducts.length) {
-          setProducts(remoteProducts);
-        }
-      }
+      setDataStoreId(selectedStoreId);
+      setSyncMessage(supabase
+        ? "Mode lokal — login dan pilih toko online untuk sinkronisasi"
+        : "Mode lokal — Supabase belum dikonfigurasi");
     };
 
-    restoreLocalData();
-  }, [selectedStoreId, schemaInfo.ready]);
+    restoreStoreData();
+    return () => {
+      active = false;
+    };
+  }, [selectedStoreId, isOnlineStore, membershipUserId, session]);
 
   useEffect(() => {
-    write(storeKey(selectedStoreId, "products"), products);
-  }, [products, selectedStoreId]);
+    if ((!supabase || !session) && !isOnlineStore && dataStoreId === selectedStoreId) {
+      write(storeKey(selectedStoreId, "products"), products);
+    }
+  }, [products, selectedStoreId, dataStoreId, isOnlineStore, session]);
 
   useEffect(() => {
-    write(storeKey(selectedStoreId, "sales"), sales);
-  }, [sales, selectedStoreId]);
+    if ((!supabase || !session) && !isOnlineStore && dataStoreId === selectedStoreId) {
+      write(storeKey(selectedStoreId, "sales"), sales);
+    }
+  }, [sales, selectedStoreId, dataStoreId, isOnlineStore, session]);
 
   useEffect(() => {
     let active = true;
@@ -171,11 +237,20 @@ function App() {
     const updateSession = async (nextSession) => {
       if (!active) return;
       setSession(nextSession);
+      setCart([]);
       if (nextSession) {
-        await loadStoreMemberships(nextSession.user.id, nextSession.user.email);
+        setMembershipUserId(null);
+        setStores([]);
+        setSelectedStoreId("");
+        setSelectedStoreName("Memuat toko...");
+        await loadStoreMemberships(nextSession.user.id);
       } else {
-        setStores(getDefaultStoreOptions(selectedStoreName));
+        setMembershipUserId(null);
+        setStores(getDefaultStoreOptions("Toko Demo"));
+        setSelectedStoreId(DEFAULT_STORE_ID);
+        setSelectedStoreName("Toko Demo");
       }
+      if (active) setAuthInitialized(true);
     };
 
     const initialize = async () => {
@@ -185,11 +260,14 @@ function App() {
 
       if (!supabase) {
         setStores(getDefaultStoreOptions(selectedStoreName));
+        setAuthInitialized(true);
         return;
       }
 
-      const { data } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-        await updateSession(nextSession);
+      const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        setTimeout(() => {
+          void updateSession(nextSession);
+        }, 0);
       });
       subscription = data.subscription;
 
@@ -205,27 +283,34 @@ function App() {
     };
   }, []);
 
-  const loadStoreMemberships = async (userId, userEmail) => {
+  const loadStoreMemberships = async (userId) => {
     if (!supabase || !userId) return;
 
     try {
       const memberships = await fetchStoreMemberships(userId);
 
       if (!memberships.length) {
-        setStores([{ id: DEFAULT_STORE_ID, name: userEmail ? `${userEmail.split("@", 1)[0]} Store` : "Toko Demo" }]);
-        setSelectedStoreId(DEFAULT_STORE_ID);
-        setSelectedStoreName("Toko Demo");
+        setStores([]);
+        setSelectedStoreId("");
+        setSelectedStoreName("Belum ada toko");
+        setMembershipUserId(userId);
         return;
       }
 
       setStores(memberships);
+      setMembershipUserId(userId);
 
-      if (!memberships.some((store) => store.id === selectedStoreId)) {
-        setSelectedStoreId(memberships[0].id);
-        setSelectedStoreName(memberships[0].name);
-      }
-    } catch {
-      setStores(getDefaultStoreOptions(selectedStoreName));
+      const savedStoreId = read("kg_selected_store", preferredStoreId);
+      const selectedStore = memberships.find((store) => store.id === savedStoreId) || memberships[0];
+      setPreferredStoreId(selectedStore.id);
+      setSelectedStoreId(selectedStore.id);
+      setSelectedStoreName(selectedStore.name);
+    } catch (error) {
+      setStores([]);
+      setMembershipUserId(null);
+      setSelectedStoreId("");
+      setSelectedStoreName("Toko tidak dapat dimuat");
+      setNotice(`Gagal memuat daftar toko: ${error?.message || "Kesalahan tidak diketahui."}`);
     }
   };
 
@@ -245,6 +330,7 @@ function App() {
         setNotice(authMode === "login" ? "Login demo berhasil." : "Registrasi demo berhasil.");
         setAuthForm({ email: "", password: "", name: "" });
         setStores([{ id: DEFAULT_STORE_ID, name: "Toko Demo" }]);
+        setPreferredStoreId(DEFAULT_STORE_ID);
         setSelectedStoreId(DEFAULT_STORE_ID);
         setSelectedStoreName("Toko Demo");
         return;
@@ -262,6 +348,7 @@ function App() {
         const { error } = await supabase.auth.signUp({
           ...payload,
           options: {
+            data: { full_name: authForm.name.trim() },
             emailRedirectTo: window.location.origin
           }
         });
@@ -284,7 +371,7 @@ function App() {
 
     if (!cleanName) return setNotice("Nama toko tidak boleh kosong.");
 
-    if (!supabase || !session || !schemaInfo.ready) {
+    if (!supabase) {
       const nextStoreId = `store-${Date.now()}`;
       const nextStore = { id: nextStoreId, name: cleanName };
       setStores((current) => {
@@ -299,16 +386,22 @@ function App() {
       return;
     }
 
+    if (!session) {
+      setNotice("Login ke Supabase sebelum membuat toko online.");
+      return;
+    }
+
     try {
-      const createdStore = await createSupabaseStore({ userId: session.user.id, name: cleanName });
+      const createdStore = await createSupabaseStore({ name: cleanName });
 
       if (!createdStore) {
         throw new Error("Gagal membuat toko. Periksa struktur tabel Supabase Anda.");
       }
 
+      setStoreDataLoading(true);
       setStores((current) => [
         ...current.filter((item) => item.id !== createdStore.id),
-        { id: createdStore.id, name: createdStore.name }
+        { id: createdStore.id, name: createdStore.name, role: "owner" }
       ]);
       setSelectedStoreId(createdStore.id);
       setSelectedStoreName(createdStore.name);
@@ -321,17 +414,28 @@ function App() {
   };
 
   const handleLogout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
+    try {
+      if (supabase) {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+      }
+      setSession(null);
+      setMembershipUserId(null);
+      setPreferredStoreId(DEFAULT_STORE_ID);
+      setSelectedStoreId(DEFAULT_STORE_ID);
+      setSelectedStoreName("Toko Demo");
+      setStores(getDefaultStoreOptions("Toko Demo"));
+      setNotice("Berhasil keluar dari akun.");
+    } catch (error) {
+      setNotice(`Gagal keluar dari akun: ${error?.message || "Kesalahan tidak diketahui."}`);
     }
-    setSession(null);
-    setSelectedStoreId(DEFAULT_STORE_ID);
-    setSelectedStoreName("Toko Demo");
-    setStores(getDefaultStoreOptions("Toko Demo"));
-    setNotice("Berhasil keluar dari akun.");
   };
 
   function addToCart(product) {
+    if (supabase && session && !isOnlineStore) {
+      return setNotice("Pilih toko online sebelum memulai transaksi.");
+    }
+    if (storeDataLoading) return setNotice("Data toko masih dimuat.");
     if (product.stock <= 0) return setNotice("Stok produk habis.");
 
     setCart((previousCart) => {
@@ -363,13 +467,7 @@ function App() {
     );
   }
 
-  async function checkout() {
-    if (!cart.length) return setNotice("Keranjang masih kosong.");
-
-    if (payMethod === "Tunai" && Number(cash) < total) {
-      return setNotice("Uang diterima belum mencukupi.");
-    }
-
+  function saveLocalSale() {
     const sale = {
       id: `TRX-${Date.now().toString().slice(-8)}`,
       time: new Date().toISOString(),
@@ -390,25 +488,78 @@ function App() {
       return item ? { ...product, stock: Math.max(0, product.stock - item.qty) } : product;
     });
 
+    write(storeKey(selectedStoreId, "sales"), nextSales);
+    write(storeKey(selectedStoreId, "products"), nextProducts);
     setSales(nextSales);
     setProducts(nextProducts);
-
-    if (supabase && selectedStoreId && schemaInfo.ready) {
-      const synced = await insertSupabaseSale({ ...sale, store_id: selectedStoreId });
-      if (!synced) {
-        setNotice("Transaksi disimpan lokal, tetapi sinkronisasi Supabase gagal. Periksa skema tabel sales.");
-      }
-    }
-
     setCart([]);
     setCash("");
     setDiscount("0");
-    setNotice("Transaksi berhasil disimpan.");
+    setNotice("Transaksi berhasil disimpan lokal di browser ini.");
     setTimeout(() => setNotice(""), 3500);
+  }
+
+  async function checkout() {
+    if (!cart.length) return setNotice("Keranjang masih kosong.");
+
+    if (payMethod === "Tunai" && Number(cash) < total) {
+      return setNotice("Uang diterima belum mencukupi.");
+    }
+
+    if (!isOnlineStore) {
+      if (supabase && session) {
+        return setNotice("Pilih toko online atau buat toko terlebih dahulu. Transaksi tidak disimpan lokal untuk akun yang sudah masuk.");
+      }
+      saveLocalSale();
+      return;
+    }
+
+    setCheckoutLoading(true);
+    try {
+      const savedSale = await insertSupabaseSale({
+        storeId: selectedStoreId,
+        items: cart,
+        discount: discountAmount,
+        taxRate: Number(taxRate) || 0,
+        paymentMethod: payMethod,
+        cashReceived: payMethod === "Tunai" ? Number(cash) : total
+      });
+      setSales((current) => [savedSale, ...current.filter((sale) => sale.databaseId !== savedSale.databaseId)]);
+      setProducts((current) => current.map((product) => {
+        const sold = cart.find((item) => item.id === product.id);
+        return sold ? { ...product, stock: Math.max(0, product.stock - sold.qty) } : product;
+      }));
+      setCart([]);
+      setCash("");
+      setDiscount("0");
+
+      try {
+        const [remoteProducts, remoteSales] = await Promise.all([
+          fetchProductsByStore(selectedStoreId),
+          fetchSalesByStore(selectedStoreId)
+        ]);
+        setProducts(remoteProducts);
+        setSales(remoteSales);
+        setSyncMessage("Tersinkron ke Supabase");
+        setNotice(`Transaksi ${savedSale.id} berhasil tersimpan di Supabase.`);
+      } catch (refreshError) {
+        setSyncMessage("Transaksi online tersimpan; sinkronisasi ulang diperlukan");
+        setNotice(`Transaksi ${savedSale.id} tersimpan online, tetapi data terbaru gagal dimuat: ${refreshError?.message || "kesalahan tidak diketahui."}`);
+      }
+    } catch (error) {
+      setSyncMessage("Checkout online gagal");
+      setNotice(`Checkout online gagal dan keranjang dipertahankan. ${error?.message || "Periksa koneksi dan riwayat transaksi sebelum mencoba kembali."}`);
+    } finally {
+      setCheckoutLoading(false);
+    }
   }
 
   async function saveProduct(event) {
     event.preventDefault();
+    if (!canManageProducts) {
+      setNotice("Hanya pemilik toko yang dapat mengubah produk.");
+      return;
+    }
 
     const item = {
       ...productForm,
@@ -420,22 +571,50 @@ function App() {
 
     if (!item.name.trim() || item.price < 0 || item.stock < 0) return;
 
+    if (isOnlineStore) {
+      try {
+        const saved = await upsertSupabaseProduct({ ...item, id: editing ?? null }, selectedStoreId);
+        setProducts((current) => editing
+          ? current.map((product) => product.id === editing ? saved : product)
+          : [...current, saved]);
+        setSyncMessage("Tersinkron ke Supabase");
+        setModal(false);
+        setEditing(null);
+        setProductForm({ name: "", sku: "", category: "Umum", price: "", stock: "" });
+      } catch (error) {
+        setNotice(`Produk gagal disimpan ke Supabase: ${error?.message || "Kesalahan tidak diketahui."}`);
+      }
+      return;
+    }
+
     const nextProducts = editing
       ? products.map((product) => (product.id === editing ? item : product))
       : [...products, item];
 
     setProducts(nextProducts);
 
-    if (supabase && selectedStoreId && schemaInfo.ready) {
-      const synced = await upsertSupabaseProduct({ ...item, id: editing ?? null }, selectedStoreId);
-      if (!synced) {
-        setNotice("Produk disimpan lokal, tetapi sinkronisasi Supabase gagal. Periksa skema tabel produk.");
-      }
-    }
-
     setModal(false);
     setEditing(null);
     setProductForm({ name: "", sku: "", category: "Umum", price: "", stock: "" });
+  }
+
+  async function removeProduct(product) {
+    if (!canManageProducts) {
+      setNotice("Hanya pemilik toko yang dapat mengubah produk.");
+      return;
+    }
+    if (!confirm(`Hapus produk ${product.name}?`)) return;
+    if (isOnlineStore) {
+      try {
+        await deleteSupabaseProduct(product.id, selectedStoreId);
+        setProducts((current) => current.filter((item) => item.id !== product.id));
+        setSyncMessage("Tersinkron ke Supabase");
+      } catch (error) {
+        setNotice(`Produk gagal dihapus dari Supabase: ${error?.message || "Kesalahan tidak diketahui."}`);
+      }
+      return;
+    }
+    setProducts((current) => current.filter((item) => item.id !== product.id));
   }
 
   function openEdit(product) {
@@ -589,6 +768,9 @@ function App() {
             </h1>
           </div>
           <div className="top-right">
+            <span className={`sync-status ${isOnlineStore ? "online" : "local"}`} title={schemaInfo.message}>
+              {syncMessage}
+            </span>
             <span className="date-chip">{today}</span>
             <span className="store-chip">{selectedStoreName}</span>
             <div className="avatar">{(selectedStoreName || "KS").slice(0, 2).toUpperCase()}</div>
@@ -635,7 +817,7 @@ function App() {
 
               <div className="product-grid">
                 {visibleProducts.map((product) => (
-                  <button className="product-card" key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0}>
+                  <button className="product-card" key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0 || storeDataLoading}>
                     <div className="product-visual" style={{ background: product.color }}>
                       <Package size={27} />
                       <span>{product.sku}</span>
@@ -762,13 +944,26 @@ function App() {
                   </div>
                 )}
 
-                <button className="checkout-btn" onClick={checkout} disabled={!cart.length}>
+                <button
+                  className="checkout-btn"
+                  onClick={checkout}
+                  disabled={
+                    !cart.length ||
+                    checkoutLoading ||
+                    storeDataLoading ||
+                    (supabase && (!authInitialized || (session && !isOnlineStore)))
+                  }
+                >
                   <span>Proses Pembayaran</span>
                   <span>
-                    {rupiah(total)} <span className="arrow">→</span>
+                    {checkoutLoading ? "Memproses..." : rupiah(total)} <span className="arrow">→</span>
                   </span>
                 </button>
-                <small className="secure-note">Transaksi tersimpan pada browser perangkat ini lalu dapat disinkronkan ke Supabase jika tabel sudah tersedia.</small>
+                <small className="secure-note">
+                  {isOnlineStore
+                    ? "Checkout akan menyimpan transaksi, detail, dan pengurangan stok secara atomik di Supabase."
+                    : "Mode lokal: transaksi tersimpan hanya di browser ini dan tidak tersinkron ke perangkat lain."}
+                </small>
               </div>
             </aside>
           </div>
@@ -831,6 +1026,8 @@ function App() {
                 </div>
                 <button
                   className="primary-btn"
+                  disabled={!canManageProducts}
+                  title={!canManageProducts ? "Hanya pemilik toko yang dapat mengubah produk." : ""}
                   onClick={() => {
                     setEditing(null);
                     setProductForm({ name: "", sku: "", category: "Umum", price: "", stock: "" });
@@ -876,14 +1073,11 @@ function App() {
                         </td>
                         <td>
                           <div className="actions">
-                            <button onClick={() => openEdit(product)}>Edit</button>
+                            <button disabled={!canManageProducts} onClick={() => openEdit(product)}>Edit</button>
                             <button
                               className="delete-action"
-                              onClick={() => {
-                                if (confirm(`Hapus produk ${product.name}?`)) {
-                                  setProducts((previousProducts) => previousProducts.filter((item) => item.id !== product.id));
-                                }
-                              }}
+                              disabled={!canManageProducts}
+                              onClick={() => removeProduct(product)}
                             >
                               Hapus
                             </button>
@@ -904,7 +1098,7 @@ function App() {
               <div className="section-head">
                 <div>
                   <h2>Semua Transaksi</h2>
-                  <p>{sales.length} transaksi tercatat di perangkat ini.</p>
+                  <p>{sales.length} transaksi {isOnlineStore ? "tersimpan di toko online." : "tersimpan lokal di browser ini."}</p>
                 </div>
                 <button
                   className="secondary-btn"
@@ -946,20 +1140,20 @@ function App() {
           <div className="page-content">
             <div className="content-card settings-card">
               <h2>Pengaturan Dasar</h2>
-              <p className="muted">Data saat ini difokuskan per toko dan tetap memiliki fallback lokal agar tidak menggagalkan operasi kasir.</p>
+              <p className="muted">Status penyimpanan saat ini: {syncMessage}.</p>
 
               <div className="setting-row">
                 <div>
                   <strong>Data produk & transaksi</strong>
-                  <p>Produk dan transaksi disimpan terpisah di browser. Akses database online tetap nonaktif sampai skema dan kebijakan RLS diverifikasi.</p>
+                  <p>{isOnlineStore ? "Produk dan riwayat transaksi dibaca dari Supabase dengan filter store_id dan RLS." : "Produk dan transaksi saat ini hanya disimpan di browser perangkat ini."} Checkout online memakai RPC atomik untuk menyimpan transaksi, detail, dan perubahan stok sekaligus.</p>
                 </div>
-                <span className="status-label">Penyimpanan lokal per toko</span>
+                <span className={`status-label ${isOnlineStore ? "online" : "local"}`}>{syncMessage}</span>
               </div>
 
               <div className="setting-row">
                 <div>
                   <strong>Autentikasi & toko</strong>
-                  <p>Login dan registrasi dapat memakai Supabase. Pembuatan toko disimpan lokal sampai skema database dan RLS terverifikasi.</p>
+                  <p>Login, registrasi, membership toko, dan pembuatan toko memakai Supabase saat konfigurasi tersedia; tanpa konfigurasi, aplikasi menggunakan data lokal.</p>
                 </div>
                 <button className="secondary-btn" onClick={() => setAuthModal(true)}>{session ? "Kelola akun" : "Login / daftar"}</button>
               </div>
@@ -967,19 +1161,19 @@ function App() {
               <div className="setting-row">
                 <div>
                   <strong>Ganti toko aktif</strong>
-                  <p>Pemilihan toko memisahkan data lokal di browser, tetapi bukan pengganti pembatasan akses server-side melalui RLS.</p>
+                  <p>Data toko online dibatasi oleh membership dan RLS server-side. Data lokal dipisahkan per toko di browser saja.</p>
                 </div>
                 <button className="secondary-btn" onClick={openStorePicker}>Pilih toko</button>
               </div>
 
               <div className="info-box">
-                <strong>Status skema Supabase</strong>
+                <strong>Status sinkronisasi</strong>
                 <p>{schemaInfo.message}</p>
               </div>
 
               <div className="info-box">
-                <strong>Catatan penting</strong>
-                <p>Integrasi baik dengan Supabase maupun fallback lokal tetap bersifat aman. Karena repo ini tidak menyertakan skema database yang hidup di server, tabel dan RLS harus diperiksa terlebih dahulu di proyek Supabase yang sebenarnya sebelum mengaktifkan sinkronisasi penuh.</p>
+                <strong>Checkout online dan migrasi</strong>
+                <p>Jalankan migrasi Supabase yang tersedia di repository untuk memasang RPC checkout atomik dan mengizinkan akun membuat lebih dari satu toko. Checkout online memerlukan migrasi tersebut; tanpa koneksi atau konfigurasi, transaksi disimpan lokal saja dan tidak tersinkron.</p>
               </div>
             </div>
           </div>
@@ -1005,6 +1199,8 @@ function App() {
                   key={store.id}
                   className={`store-item ${selectedStoreId === store.id ? "selected-store" : ""}`}
                   onClick={() => {
+                    setStoreDataLoading(true);
+                    setPreferredStoreId(store.id);
                     setSelectedStoreId(store.id);
                     setSelectedStoreName(store.name);
                     setStorePicker(false);
@@ -1035,7 +1231,7 @@ function App() {
             <div className="modal-head">
               <div>
                 <h2>{authMode === "login" ? "Masuk" : "Daftar"}</h2>
-                <p>Gunakan akun Supabase yang sudah ada atau demo local.</p>
+                <p>Gunakan akun Supabase yang sudah ada atau mode demo lokal (data tidak tersinkron).</p>
               </div>
               <button type="button" className="icon-btn" onClick={() => setAuthModal(false)}>
                 <X size={19} />
@@ -1049,6 +1245,7 @@ function App() {
                   value={authForm.name}
                   onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
                   placeholder="Nama pemilik toko"
+                  required
                 />
               </label>
             )}
