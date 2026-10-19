@@ -846,7 +846,21 @@ function App() {
                 </button>
               )}
             </div>
-          ) : authFormView(null)}
+           ) : (
+            <>
+              {authFormView(null)}
+              <section className="auth-install-card" aria-labelledby="auth-install-title">
+                <div>
+                  <h2 id="auth-install-title">Pasang KasirPOS</h2>
+                  <p>Tambahkan ke layar utama agar KasirPOS mudah dibuka seperti aplikasi.</p>
+                </div>
+                <button className="primary-btn" type="button" onClick={handleInstallApp} disabled={appInstalled}>
+                  <Smartphone size={17} />
+                  {appInstalled ? "Sudah terpasang" : installPrompt ? "Pasang aplikasi" : "Cara memasang"}
+                </button>
+              </section>
+            </>
+          )}
         </div>
       </div>
     );
