@@ -1513,7 +1513,7 @@ function SalesTable({ sales, onPrint }) {
           {sales.map((sale) => (
             <tr key={sale.id}>
               <td data-label="ID transaksi">
-                <strong>{sale.id}</strong>
+                <strong className="transaction-id" title={sale.id}>{sale.id}</strong>
               </td>
               <td data-label="Tanggal">{new Date(sale.time).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</td>
               <td data-label="Item">{sale.items.reduce((sum, item) => sum + item.qty, 0)} item</td>
