@@ -109,6 +109,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authInitialized, setAuthInitialized] = useState(!supabase);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [appInstalled, setAppInstalled] = useState(false);
   const [storeDataLoading, setStoreDataLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ email: "", password: "", name: "" });
   const [newStoreName, setNewStoreName] = useState("");
@@ -151,6 +153,27 @@ function App() {
   const discountAmount = Math.min(subtotal, Math.max(0, Number(discount) || 0));
   const tax = Math.round(((subtotal - discountAmount) * Math.max(0, Number(taxRate) || 0)) / 100);
   const total = subtotal - discountAmount + tax;
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    setAppInstalled(standalone);
+
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleAppInstalled = () => {
+      setAppInstalled(true);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
 
   useEffect(() => {
     if (authInitialized && selectedStoreId) {
@@ -411,6 +434,31 @@ function App() {
     } catch (error) {
       setNotice(error?.message || "Gagal membuat toko. Periksa struktur tabel Supabase Anda.");
     }
+  };
+
+  const handleInstallApp = async () => {
+    if (appInstalled) return;
+
+    if (installPrompt) {
+      try {
+        await installPrompt.prompt();
+        const result = await installPrompt.userChoice;
+        setNotice(result.outcome === "accepted"
+          ? "KasirPOS berhasil dipasang di perangkat ini."
+          : "Pemasangan aplikasi dibatalkan.");
+      } catch {
+        setNotice("Browser belum dapat memulai pemasangan aplikasi.");
+      } finally {
+        setInstallPrompt(null);
+      }
+      return;
+    }
+
+    const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    setNotice(isIOS
+      ? "Di Safari, ketuk Bagikan lalu pilih Tambahkan ke Layar Utama."
+      : "Buka menu browser (⋮), lalu pilih Instal aplikasi atau Tambahkan ke layar utama.");
   };
 
   const handleLogout = async () => {
@@ -1331,6 +1379,16 @@ function App() {
                 <button className="secondary-btn" onClick={openStorePicker}>Pilih toko</button>
               </div>
 
+              <div className="setting-row">
+                <div>
+                  <strong>Pasang KasirPOS</strong>
+                  <p>Android: gunakan tombol pasang atau menu browser. iPhone: buka di Safari, ketuk Bagikan, lalu pilih Tambahkan ke Layar Utama.</p>
+                </div>
+                <button className="primary-btn" onClick={handleInstallApp} disabled={appInstalled}>
+                  <Smartphone size={16} /> {appInstalled ? "Sudah terpasang" : installPrompt ? "Pasang aplikasi" : "Cara memasang"}
+                </button>
+              </div>
+
               <div className="info-box">
                 <strong>Status sinkronisasi</strong>
                 <p>{schemaInfo.message}</p>
@@ -1537,4 +1595,12 @@ function SalesTable({ sales, onPrint }) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
+      console.warn("Service worker KasirPOS tidak dapat didaftarkan.", error);
+    });
+  });
+}
 
