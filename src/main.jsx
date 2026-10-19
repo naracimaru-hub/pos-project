@@ -690,6 +690,155 @@ function App() {
   const [productForm, setProductForm] = useState({ name: "", sku: "", category: "Umum", price: "", stock: "" });
   const [editing, setEditing] = useState(null);
 
+  const authFormView = (onCancel) => (
+    <form className="product-modal auth-gate-form" onSubmit={handleAuthSubmit} onClick={(event) => event.stopPropagation()}>
+      <div className="modal-head">
+        <div>
+          <h2>{authMode === "login" ? "Masuk" : "Daftar"}</h2>
+          <p>{supabase
+            ? "Masuk dengan akun Supabase untuk melanjutkan ke aplikasi."
+            : "Masuk ke mode demo lokal untuk membuka data demo di browser ini. Data tidak tersinkron."}</p>
+        </div>
+        {onCancel && (
+          <button type="button" className="icon-btn" onClick={onCancel} aria-label="Tutup">
+            <X size={19} />
+          </button>
+        )}
+      </div>
+
+      {notice && (
+        <div className={`notice ${notice.includes("berhasil") || notice.includes("siap") ? "success" : ""}`}>
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice("")} aria-label="Tutup pesan">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {authMode === "register" && (
+        <label>
+          Nama lengkap
+          <input
+            value={authForm.name}
+            onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
+            placeholder="Nama pemilik toko"
+            required
+          />
+        </label>
+      )}
+
+      <label>
+        Email
+        <input
+          type="email"
+          required
+          value={authForm.email}
+          onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
+          placeholder="contoh@email.com"
+        />
+      </label>
+
+      <label>
+        Password
+        <input
+          type="password"
+          required
+          minLength="6"
+          value={authForm.password}
+          onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
+          placeholder="Minimal 6 karakter"
+        />
+      </label>
+
+      <div className="auth-toggle-row">
+        <button type="button" className="text-button" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>
+          {authMode === "login" ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk"}
+        </button>
+      </div>
+
+      <div className="modal-actions">
+        {onCancel && <button type="button" className="secondary-btn" onClick={onCancel}>Batal</button>}
+        <button className="primary-btn" type="submit" disabled={authLoading}>
+          {authLoading ? "Memproses..." : authMode === "login" ? "Masuk" : "Daftar"}
+        </button>
+      </div>
+    </form>
+  );
+
+  const waitingForStoreMembership = Boolean(supabase && session && membershipUserId !== session.user.id);
+  const needsFirstStore = Boolean(supabase && session && membershipUserId === session.user.id && stores.length === 0);
+
+  if (!authInitialized || !session || waitingForStoreMembership) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-content">
+          <div className="auth-gate-brand">
+            <div className="brand-icon"><ShoppingCart size={21} /></div>
+            <div><strong>Kasir<span>POS</span></strong><small>REDAKTOR SAAS</small></div>
+          </div>
+          {!authInitialized || waitingForStoreMembership ? (
+            <div className="content-card auth-gate-status" role="status" aria-live="polite">
+              <h1>{session ? "Memuat toko…" : "Memeriksa sesi…"}</h1>
+              <p>{session ? "Data toko akun Anda sedang dimuat." : "Sebentar, kami memeriksa sesi masuk Anda."}</p>
+              {notice && (
+                <div className="notice">
+                  <span>{notice}</span>
+                  <button type="button" onClick={() => setNotice("")} aria-label="Tutup pesan"><X size={16} /></button>
+                </div>
+              )}
+              {session && notice.startsWith("Gagal memuat daftar toko:") && (
+                <button
+                  className="secondary-btn auth-gate-logout"
+                  onClick={() => {
+                    setNotice("");
+                    void loadStoreMemberships(session.user.id);
+                  }}
+                >
+                  Coba muat toko lagi
+                </button>
+              )}
+            </div>
+          ) : authFormView(null)}
+        </div>
+      </div>
+    );
+  }
+
+  if (needsFirstStore) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-content">
+          <div className="auth-gate-brand">
+            <div className="brand-icon"><ShoppingCart size={21} /></div>
+            <div><strong>Kasir<span>POS</span></strong><small>REDAKTOR SAAS</small></div>
+          </div>
+          <section className="content-card auth-gate-status">
+            <h1>Buat toko pertama</h1>
+            <p>Akun ini belum memiliki toko. Buat toko untuk mulai menggunakan KasirPOS.</p>
+            {notice && (
+              <div className={`notice ${notice.includes("berhasil") || notice.includes("siap") ? "success" : ""}`}>
+                <span>{notice}</span>
+                <button type="button" onClick={() => setNotice("")} aria-label="Tutup pesan"><X size={16} /></button>
+              </div>
+            )}
+            <form className="store-setup-form" onSubmit={handleCreateStore}>
+              <label>
+                Nama toko
+                <input value={newStoreName} onChange={(event) => setNewStoreName(event.target.value)} placeholder="Contoh: Toko Buah Segar" required />
+              </label>
+              <button className="primary-btn" type="submit" disabled={storeDataLoading}>
+                <Plus size={16} /> {storeDataLoading ? "Menyimpan…" : "Buat toko"}
+              </button>
+            </form>
+            <button className="secondary-btn auth-gate-logout" onClick={handleLogout}>
+              <LogOut size={16} /> Keluar
+            </button>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -1241,65 +1390,7 @@ function App() {
 
       {authModal && (
         <div className="modal-backdrop" onClick={() => setAuthModal(false)}>
-          <form className="product-modal" onSubmit={handleAuthSubmit} onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <h2>{authMode === "login" ? "Masuk" : "Daftar"}</h2>
-                <p>Gunakan akun Supabase yang sudah ada atau mode demo lokal (data tidak tersinkron).</p>
-              </div>
-              <button type="button" className="icon-btn" onClick={() => setAuthModal(false)}>
-                <X size={19} />
-              </button>
-            </div>
-
-            {authMode === "register" && (
-              <label>
-                Nama lengkap
-                <input
-                  value={authForm.name}
-                  onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })}
-                  placeholder="Nama pemilik toko"
-                  required
-                />
-              </label>
-            )}
-
-            <label>
-              Email
-              <input
-                type="email"
-                required
-                value={authForm.email}
-                onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-                placeholder="contoh@email.com"
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                required
-                minLength="6"
-                value={authForm.password}
-                onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-                placeholder="Minimal 6 karakter"
-              />
-            </label>
-
-            <div className="auth-toggle-row">
-              <button type="button" className="text-button" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>
-                {authMode === "login" ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk"}
-              </button>
-            </div>
-
-            <div className="modal-actions">
-              <button type="button" className="secondary-btn" onClick={() => setAuthModal(false)}>Batal</button>
-              <button className="primary-btn" type="submit" disabled={authLoading}>
-                {authLoading ? "Memproses..." : authMode === "login" ? "Masuk" : "Daftar"}
-              </button>
-            </div>
-          </form>
+          {authFormView(() => setAuthModal(false))}
         </div>
       )}
 
@@ -1444,3 +1535,4 @@ function SalesTable({ sales, onPrint }) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
