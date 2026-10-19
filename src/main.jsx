@@ -1512,18 +1512,18 @@ function SalesTable({ sales, onPrint }) {
         <tbody>
           {sales.map((sale) => (
             <tr key={sale.id}>
-              <td>
+              <td data-label="ID transaksi">
                 <strong>{sale.id}</strong>
               </td>
-              <td>{new Date(sale.time).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</td>
-              <td>{sale.items.reduce((sum, item) => sum + item.qty, 0)} item</td>
-              <td>
+              <td data-label="Tanggal">{new Date(sale.time).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</td>
+              <td data-label="Item">{sale.items.reduce((sum, item) => sum + item.qty, 0)} item</td>
+              <td data-label="Pembayaran">
                 <span className="category-badge">{sale.method}</span>
               </td>
-              <td>
+              <td data-label="Total">
                 <b>{rupiah(sale.total)}</b>
               </td>
-              <td>
+              <td data-label="Struk">
                 <button className="print-btn" onClick={() => onPrint(sale)}>
                   <Printer size={15} /> Cetak
                 </button>
