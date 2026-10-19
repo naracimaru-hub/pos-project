@@ -1209,20 +1209,20 @@ function App() {
                   <tbody>
                     {visibleProducts.map((product) => (
                       <tr key={product.id}>
-                        <td>
+                        <td data-label="Produk">
                           <strong>{product.name}</strong>
                         </td>
-                        <td>{product.sku || "-"}</td>
-                        <td>
+                        <td data-label="SKU">{product.sku || "-"}</td>
+                        <td data-label="Kategori">
                           <span className="category-badge">{product.category}</span>
                         </td>
-                        <td>
+                        <td data-label="Harga">
                           <b>{rupiah(product.price)}</b>
                         </td>
-                        <td>
+                        <td data-label="Stok">
                           <span className={product.stock <= 5 ? "stock-low" : "stock-ok"}>{product.stock}</span>
                         </td>
-                        <td>
+                        <td data-label="Aksi">
                           <div className="actions">
                             <button disabled={!canManageProducts} onClick={() => openEdit(product)}>Edit</button>
                             <button
