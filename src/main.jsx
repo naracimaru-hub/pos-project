@@ -414,6 +414,8 @@ function App() {
   };
 
   const handleLogout = async () => {
+    if (!confirm("Apakah Anda yakin ingin keluar dari akun?")) return;
+
     try {
       if (supabase) {
         const { error } = await supabase.auth.signOut();
@@ -1157,6 +1159,18 @@ function App() {
                 </div>
                 <button className="secondary-btn" onClick={() => setAuthModal(true)}>{session ? "Kelola akun" : "Login / daftar"}</button>
               </div>
+
+              {session && (
+                <div className="setting-row">
+                  <div>
+                    <strong>Keluar dari akun</strong>
+                    <p>Keluar dari sesi akun ini tanpa menghapus data produk, transaksi, atau toko.</p>
+                  </div>
+                  <button className="secondary-btn" onClick={handleLogout}>
+                    <LogOut size={16} /> Keluar
+                  </button>
+                </div>
+              )}
 
               <div className="setting-row">
                 <div>
