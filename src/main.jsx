@@ -861,6 +861,8 @@ function App() {
             <button
               key={item.name}
               className={`nav-item ${page === item.name ? "active" : ""}`}
+              aria-label={item.name}
+              title={item.name}
               onClick={() => {
                 setPage(item.name);
                 setNotice("");
