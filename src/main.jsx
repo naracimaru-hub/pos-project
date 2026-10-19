@@ -968,7 +968,7 @@ function App() {
                 ))}
               </div>
 
-              <div className="product-grid">
+              <div className={`product-grid ${visibleProducts.length === 1 ? "single-product-grid" : ""}`}>
                 {visibleProducts.map((product) => (
                   <button className="product-card" key={product.id} onClick={() => addToCart(product)} disabled={product.stock <= 0 || storeDataLoading}>
                     <div className="product-visual" style={{ background: product.color }}>
