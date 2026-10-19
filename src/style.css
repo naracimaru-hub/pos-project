@@ -1324,14 +1324,20 @@ th {
     gap: 8px;
   }
 
+  .topbar > div:first-child {
+    min-width: 0;
+    flex: 1;
+  }
+
   .topbar h1 {
-    max-width: 190px;
-    font-size: 21px;
+    max-width: none;
+    font-size: clamp(18px, 5.2vw, 21px);
     line-height: 1.2;
   }
 
   .top-right {
-    max-width: 52%;
+    flex: 0 1 auto;
+    max-width: 50%;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 6px;
@@ -1365,6 +1371,12 @@ th {
   }
 
   .product-search { width: 100%; }
+
+  .cart-panel { position: static; }
+  .product-modal {
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+  }
 
   .table-wrap {
     overflow: visible;
