@@ -1427,6 +1427,14 @@ th {
 
   .table-wrap tbody td:first-child strong { font-size: 15px; }
 
+  .table-wrap tbody td:first-child .transaction-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
   .table-wrap .actions { justify-content: flex-start; }
 
   .product-grid {
