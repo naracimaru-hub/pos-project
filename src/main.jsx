@@ -456,9 +456,41 @@ function App() {
 
     const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    setNotice(isIOS
-      ? "Di Safari, ketuk Bagikan lalu pilih Tambahkan ke Layar Utama."
-      : "Buka menu browser (⋮), lalu pilih Instal aplikasi atau Tambahkan ke layar utama.");
+    if (isIOS) {
+      setNotice("Di Safari, ketuk Bagikan lalu pilih Tambahkan ke Layar Utama.");
+      return;
+    }
+
+    setNotice("Memeriksa syarat pemasangan...");
+    try {
+      const [manifestResponse, icon192Response, icon512Response, registration] = await Promise.all([
+        fetch("/manifest.webmanifest", { cache: "no-store" }),
+        fetch("/icons/icon-192.png", { cache: "no-store" }),
+        fetch("/icons/icon-512.png", { cache: "no-store" }),
+        navigator.serviceWorker?.getRegistration("/")
+      ]);
+      const manifest = manifestResponse.ok ? await manifestResponse.json() : null;
+      const manifestOk = Boolean(
+        manifestResponse.ok &&
+        manifest?.name &&
+        manifest?.start_url &&
+        manifest?.display === "standalone"
+      );
+      const iconsOk = Boolean(icon192Response?.ok && icon512Response?.ok);
+      const workerState = registration?.active?.state || "belum aktif";
+      const controlled = Boolean(navigator.serviceWorker?.controller);
+      const result = [
+        `Manifest: ${manifestOk ? "OK" : "gagal"}`,
+        `Ikon: ${iconsOk ? "OK" : "gagal"}`,
+        `Service worker: ${workerState}${controlled ? " (halaman dikontrol)" : ""}`
+      ].join(" · ");
+      const allOk = manifestOk && iconsOk && workerState === "activated";
+      setNotice(allOk
+        ? `${result}. Tutup tab ini, buka kembali situs, lalu menu ⋮ → Instal aplikasi.`
+        : `${result}. Tutup semua tab situs ini, buka ulang, lalu coba lagi.`);
+    } catch {
+      setNotice("Pemeriksaan gagal. Pastikan koneksi aktif, lalu muat ulang situs dan coba lagi.");
+    }
   };
 
   const handleLogout = async () => {
