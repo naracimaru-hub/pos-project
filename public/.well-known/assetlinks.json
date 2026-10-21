@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.pos_project_sage.twa",
+      "sha256_cert_fingerprints": [
+        "35:0C:C9:55:81:5D:17:73:B3:2B:85:C9:19:BE:33:71:44:D7:59:8D:47:D9:57:B6:B2:E5:1B:8D:0C:9F:82:4D"
+      ]
+    }
+  }
+]
