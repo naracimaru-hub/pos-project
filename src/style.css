@@ -1072,6 +1072,33 @@ th {
   width: 100%;
 }
 
+.auth-install-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(120, 22, 28, 0.08);
+}
+
+.auth-install-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.auth-install-card p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auth-install-card .primary-btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .auth-gate-status h1 {
   margin: 0 0 8px;
   font-size: 23px;

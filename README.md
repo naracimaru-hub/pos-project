@@ -24,6 +24,12 @@ Aplikasi kasir sederhana berbasis React + Vite, siap di-deploy ke Vercel.
 5. Buka **Supabase Dashboard → SQL Editor**, tinjau lalu jalankan isi `supabase/migrations/20261018174500_atomic_checkout_and_multistore.sql` secara manual pada project yang benar. Migrasi ini tidak diterapkan otomatis oleh aplikasi atau build. Fungsi `create_store` dalam SQL tersebut didefinisikan dengan parameter `p_name text`, sesuai argumen RPC aplikasi.
 6. Jalankan `npm install` dan `npm run build`; jalankan aplikasi lokal dengan `npm run dev`.
 
+## Instalasi di ponsel
+Aplikasi dapat dipasang sebagai PWA dari domain HTTPS produksi:
+- Android: buka situs lewat Chrome atau browser yang mendukung, lalu pilih **Pasang aplikasi** atau **Tambahkan ke layar utama**.
+- iPhone/iPad: buka situs lewat Safari, ketuk **Bagikan**, lalu pilih **Tambahkan ke Layar Utama**.
+- Service worker menyimpan shell aplikasi dan aset statis untuk membantu membuka halaman saat offline. Data Supabase, transaksi online, dan API tidak disimpan atau disinkronkan secara offline.
+
 ## Status penyimpanan
 - Badge di bagian atas menunjukkan apakah data saat ini online atau hanya lokal.
 - Tanpa konfigurasi Supabase atau saat belum login, POS tetap berjalan dalam mode demo lokal di `localStorage`. Data lokal tidak tersinkron ke perangkat lain. Pengguna yang sudah login tanpa membership hanya melihat alur pembuatan toko, bukan data demo seolah tersimpan online.

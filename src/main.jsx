@@ -109,6 +109,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authInitialized, setAuthInitialized] = useState(!supabase);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [appInstalled, setAppInstalled] = useState(false);
   const [storeDataLoading, setStoreDataLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ email: "", password: "", name: "" });
   const [newStoreName, setNewStoreName] = useState("");
@@ -151,6 +153,27 @@ function App() {
   const discountAmount = Math.min(subtotal, Math.max(0, Number(discount) || 0));
   const tax = Math.round(((subtotal - discountAmount) * Math.max(0, Number(taxRate) || 0)) / 100);
   const total = subtotal - discountAmount + tax;
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    setAppInstalled(standalone);
+
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleAppInstalled = () => {
+      setAppInstalled(true);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
 
   useEffect(() => {
     if (authInitialized && selectedStoreId) {
@@ -410,6 +433,63 @@ function App() {
       setNotice(`Toko "${createdStore.name}" siap dipakai.`);
     } catch (error) {
       setNotice(error?.message || "Gagal membuat toko. Periksa struktur tabel Supabase Anda.");
+    }
+  };
+
+  const handleInstallApp = async () => {
+    if (appInstalled) return;
+
+    if (installPrompt) {
+      try {
+        await installPrompt.prompt();
+        const result = await installPrompt.userChoice;
+        setNotice(result.outcome === "accepted"
+          ? "KasirPOS berhasil dipasang di perangkat ini."
+          : "Pemasangan aplikasi dibatalkan.");
+      } catch {
+        setNotice("Browser belum dapat memulai pemasangan aplikasi.");
+      } finally {
+        setInstallPrompt(null);
+      }
+      return;
+    }
+
+    const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+      setNotice("Di Safari, ketuk Bagikan lalu pilih Tambahkan ke Layar Utama.");
+      return;
+    }
+
+    setNotice("Memeriksa syarat pemasangan...");
+    try {
+      const [manifestResponse, icon192Response, icon512Response, registration] = await Promise.all([
+        fetch("/manifest.webmanifest", { cache: "no-store" }),
+        fetch("/icons/icon-192.png", { cache: "no-store" }),
+        fetch("/icons/icon-512.png", { cache: "no-store" }),
+        navigator.serviceWorker?.getRegistration("/")
+      ]);
+      const manifest = manifestResponse.ok ? await manifestResponse.json() : null;
+      const manifestOk = Boolean(
+        manifestResponse.ok &&
+        manifest?.name &&
+        manifest?.start_url &&
+        manifest?.display === "standalone"
+      );
+      const iconsOk = Boolean(icon192Response?.ok && icon512Response?.ok);
+      const workerState = registration?.active?.state || "belum aktif";
+      const controlled = Boolean(navigator.serviceWorker?.controller);
+      const result = [
+        `Manifest: ${manifestOk ? "OK" : "gagal"}`,
+        `Ikon: ${iconsOk ? "OK" : "gagal"}`,
+        `Service worker: ${workerState}${controlled ? " (halaman dikontrol)" : ""}`
+      ].join(" · ");
+      const allOk = manifestOk && iconsOk && workerState === "activated";
+      setNotice(allOk
+        ? `${result}. Tutup tab ini, buka kembali situs, lalu menu ⋮ → Instal aplikasi.`
+        : `${result}. Tutup semua tab situs ini, buka ulang, lalu coba lagi.`);
+    } catch {
+      setNotice("Pemeriksaan gagal. Pastikan koneksi aktif, lalu muat ulang situs dan coba lagi.");
     }
   };
 
@@ -798,7 +878,21 @@ function App() {
                 </button>
               )}
             </div>
-          ) : authFormView(null)}
+           ) : (
+            <>
+              {authFormView(null)}
+              <section className="auth-install-card" aria-labelledby="auth-install-title">
+                <div>
+                  <h2 id="auth-install-title">Pasang KasirPOS</h2>
+                  <p>Tambahkan ke layar utama agar KasirPOS mudah dibuka seperti aplikasi.</p>
+                </div>
+                <button className="primary-btn" type="button" onClick={handleInstallApp} disabled={appInstalled}>
+                  <Smartphone size={17} />
+                  {appInstalled ? "Sudah terpasang" : installPrompt ? "Pasang aplikasi" : "Cara memasang"}
+                </button>
+              </section>
+            </>
+          )}
         </div>
       </div>
     );
@@ -1331,6 +1425,16 @@ function App() {
                 <button className="secondary-btn" onClick={openStorePicker}>Pilih toko</button>
               </div>
 
+              <div className="setting-row">
+                <div>
+                  <strong>Pasang KasirPOS</strong>
+                  <p>Android: gunakan tombol pasang atau menu browser. iPhone: buka di Safari, ketuk Bagikan, lalu pilih Tambahkan ke Layar Utama.</p>
+                </div>
+                <button className="primary-btn" onClick={handleInstallApp} disabled={appInstalled}>
+                  <Smartphone size={16} /> {appInstalled ? "Sudah terpasang" : installPrompt ? "Pasang aplikasi" : "Cara memasang"}
+                </button>
+              </div>
+
               <div className="info-box">
                 <strong>Status sinkronisasi</strong>
                 <p>{schemaInfo.message}</p>
@@ -1537,4 +1641,12 @@ function SalesTable({ sales, onPrint }) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
+      console.warn("Service worker KasirPOS tidak dapat didaftarkan.", error);
+    });
+  });
+}
 

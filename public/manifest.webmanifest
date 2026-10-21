@@ -1,0 +1,22 @@
+{
+  "name": "KasirPOS",
+  "short_name": "KasirPOS",
+  "description": "Kelola transaksi, produk, stok, dan toko dengan KasirPOS.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fff6f6",
+  "theme_color": "#4a0d12",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
